@@ -1,0 +1,73 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  UNPAID
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Tenant {
+  id        String     @id @default(uuid())
+  name      String
+  createdAt DateTime   @default(now())
+  employees Employee[]
+
+  @@map("tenants")
+}
+
+model Employee {
+  id                 String         @id @default(uuid())
+  tenantId           String
+  tenant             Tenant         @relation(fields: [tenantId], references: [id])
+  name               String
+  annualLeaveBalance Int            @default(0)
+  leaveRequests      LeaveRequest[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([tenantId])
+  @@map("employees")
+}
+
+// tenantId is denormalized from employee.tenantId so every row can be
+// scoped/indexed by tenant directly, without a join, ahead of the
+// tenant-isolation work discussed in DESIGN_NOTES.md.
+model LeaveRequest {
+  id               String      @id @default(uuid())
+  tenantId         String
+  employeeId       String
+  employee         Employee    @relation(fields: [employeeId], references: [id])
+  leaveType        LeaveType
+  startDate        DateTime    @db.Date
+  endDate          DateTime    @db.Date
+  daysRequested    Int
+  reason           String?
+  status           LeaveStatus @default(PENDING)
+  approvedBy       String?
+  approvedAt       DateTime?
+  rejectedBy       String?
+  rejectedAt       DateTime?
+  rejectionComment String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@index([tenantId])
+  @@index([employeeId, status])
+  @@map("leave_requests")
+}
