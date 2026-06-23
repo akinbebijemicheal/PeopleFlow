@@ -86,6 +86,65 @@ export class LeaveRequestsService {
     });
   }
 
+  /**
+   * Idempotent on purpose: the UI retries on timeout (see DEBUGGING.md), so a
+   * second call for an already-approved request must not throw and must not
+   * deduct the balance again. The PENDING -> APPROVED transition itself is a
+   * single conditional UPDATE (updateMany with status: PENDING in the WHERE
+   * clause), which Postgres can only let one concurrent caller win — the
+   * loser's UPDATE re-evaluates against the now-committed row and matches
+   * zero rows, so it falls through to "already approved" instead of
+   * double-deducting.
+   */
+  async approve(tenantId: string, id: string, approverId: string) {
+    const existing = await this.prisma.leaveRequest.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Leave request not found');
+    }
+
+    if (existing.status === LeaveStatus.APPROVED) {
+      return existing;
+    }
+    if (existing.status === LeaveStatus.REJECTED) {
+      throw new ConflictException('Leave request has already been rejected');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.leaveRequest.updateMany({
+        where: { id, tenantId, status: LeaveStatus.PENDING },
+        data: {
+          status: LeaveStatus.APPROVED,
+          approvedBy: approverId,
+          approvedAt: new Date(),
+        },
+      });
+
+      if (count === 0) {
+        // Lost the race to a concurrent approval of the same request.
+        return tx.leaveRequest.findUniqueOrThrow({ where: { id } });
+      }
+
+      if (existing.leaveType === LeaveType.ANNUAL) {
+        const { count: balanceUpdated } = await tx.employee.updateMany({
+          where: {
+            id: existing.employeeId,
+            annualLeaveBalance: { gte: existing.daysRequested },
+          },
+          data: { annualLeaveBalance: { decrement: existing.daysRequested } },
+        });
+        if (balanceUpdated === 0) {
+          throw new UnprocessableEntityException(
+            'Insufficient annual leave balance at approval time',
+          );
+        }
+      }
+
+      return tx.leaveRequest.findUniqueOrThrow({ where: { id } });
+    });
+  }
+
   private validateReason(
     leaveType: LeaveType,
     reason: string | undefined,
