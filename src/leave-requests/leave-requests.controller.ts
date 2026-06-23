@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   APPROVER_ID_HEADER,
   DEFAULT_TENANT_ID,
@@ -20,11 +21,21 @@ import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
 import { LeaveRequestsService } from './leave-requests.service';
 
+@ApiTags('leave-requests')
+@ApiHeader({
+  name: TENANT_HEADER,
+  required: false,
+  description: `Defaults to ${DEFAULT_TENANT_ID}`,
+})
 @Controller('leave-requests')
 export class LeaveRequestsController {
   constructor(private readonly leaveRequestsService: LeaveRequestsService) {}
 
   @Get()
+  @ApiOperation({
+    summary:
+      'List leave requests, optionally filtered by status and/or employeeId',
+  })
   findAll(
     @Query() query: ListLeaveRequestsQueryDto,
     @Headers(TENANT_HEADER) tenantId?: string,
@@ -37,6 +48,7 @@ export class LeaveRequestsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Submit a leave request (enters PENDING)' })
   create(
     @Body() dto: CreateLeaveRequestDto,
     @Headers(TENANT_HEADER) tenantId?: string,
@@ -46,6 +58,10 @@ export class LeaveRequestsController {
 
   @Post(':id/approve')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Approve a PENDING leave request (idempotent on retry)',
+  })
+  @ApiHeader({ name: APPROVER_ID_HEADER, required: true })
   approve(
     @Param('id') id: string,
     @Headers(TENANT_HEADER) tenantId: string | undefined,
@@ -63,6 +79,8 @@ export class LeaveRequestsController {
 
   @Post(':id/reject')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reject a PENDING leave request' })
+  @ApiHeader({ name: APPROVER_ID_HEADER, required: true })
   reject(
     @Param('id') id: string,
     @Body() dto: RejectLeaveRequestDto,
