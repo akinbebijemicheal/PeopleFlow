@@ -2,11 +2,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Headers,
   HttpCode,
   HttpStatus,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   APPROVER_ID_HEADER,
@@ -14,12 +16,24 @@ import {
   TENANT_HEADER,
 } from '../common/constants/headers';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
 import { LeaveRequestsService } from './leave-requests.service';
 
 @Controller('leave-requests')
 export class LeaveRequestsController {
   constructor(private readonly leaveRequestsService: LeaveRequestsService) {}
+
+  @Get()
+  findAll(
+    @Query() query: ListLeaveRequestsQueryDto,
+    @Headers(TENANT_HEADER) tenantId?: string,
+  ) {
+    return this.leaveRequestsService.findAll(
+      tenantId ?? DEFAULT_TENANT_ID,
+      query,
+    );
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)

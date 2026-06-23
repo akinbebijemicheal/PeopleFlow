@@ -12,6 +12,7 @@ import {
 } from '../common/utils/date.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
 
 const SICK_REASON_MIN_LENGTH = 20;
@@ -189,6 +190,17 @@ export class LeaveRequestsService {
       throw new ConflictException('Leave request has already been approved');
     }
     return current;
+  }
+
+  findAll(tenantId: string, query: ListLeaveRequestsQueryDto) {
+    return this.prisma.leaveRequest.findMany({
+      where: {
+        tenantId,
+        ...(query.status && { status: query.status }),
+        ...(query.employeeId && { employeeId: query.employeeId }),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   private validateReason(
