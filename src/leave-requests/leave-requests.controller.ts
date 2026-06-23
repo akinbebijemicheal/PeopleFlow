@@ -14,6 +14,7 @@ import {
   TENANT_HEADER,
 } from '../common/constants/headers';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
 import { LeaveRequestsService } from './leave-requests.service';
 
 @Controller('leave-requests')
@@ -43,6 +44,25 @@ export class LeaveRequestsController {
       tenantId ?? DEFAULT_TENANT_ID,
       id,
       approverId,
+    );
+  }
+
+  @Post(':id/reject')
+  @HttpCode(HttpStatus.OK)
+  reject(
+    @Param('id') id: string,
+    @Body() dto: RejectLeaveRequestDto,
+    @Headers(TENANT_HEADER) tenantId: string | undefined,
+    @Headers(APPROVER_ID_HEADER) approverId: string | undefined,
+  ) {
+    if (!approverId) {
+      throw new BadRequestException(`${APPROVER_ID_HEADER} header is required`);
+    }
+    return this.leaveRequestsService.reject(
+      tenantId ?? DEFAULT_TENANT_ID,
+      id,
+      approverId,
+      dto,
     );
   }
 }

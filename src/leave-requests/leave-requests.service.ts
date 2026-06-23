@@ -12,6 +12,7 @@ import {
 } from '../common/utils/date.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { RejectLeaveRequestDto } from './dto/reject-leave-request.dto';
 
 const SICK_REASON_MIN_LENGTH = 20;
 const SICK_CONSECUTIVE_DAYS_THRESHOLD = 3;
@@ -143,6 +144,51 @@ export class LeaveRequestsService {
 
       return tx.leaveRequest.findUniqueOrThrow({ where: { id } });
     });
+  }
+
+  /**
+   * Same idempotent shape as approve(): a retried reject for an
+   * already-rejected request is a no-op, not an error. An already-approved
+   * request is a genuine conflict (you can't un-approve via reject).
+   */
+  async reject(
+    tenantId: string,
+    id: string,
+    approverId: string,
+    dto: RejectLeaveRequestDto,
+  ) {
+    const existing = await this.prisma.leaveRequest.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Leave request not found');
+    }
+
+    if (existing.status === LeaveStatus.REJECTED) {
+      return existing;
+    }
+    if (existing.status === LeaveStatus.APPROVED) {
+      throw new ConflictException('Leave request has already been approved');
+    }
+
+    const { count } = await this.prisma.leaveRequest.updateMany({
+      where: { id, tenantId, status: LeaveStatus.PENDING },
+      data: {
+        status: LeaveStatus.REJECTED,
+        rejectedBy: approverId,
+        rejectedAt: new Date(),
+        rejectionComment: dto.comment,
+      },
+    });
+
+    const current = await this.prisma.leaveRequest.findUniqueOrThrow({
+      where: { id },
+    });
+    if (count === 0 && current.status === LeaveStatus.APPROVED) {
+      // Lost the race to a concurrent approval of the same request.
+      throw new ConflictException('Leave request has already been approved');
+    }
+    return current;
   }
 
   private validateReason(
